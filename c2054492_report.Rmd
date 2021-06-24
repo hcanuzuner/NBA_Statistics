@@ -1,0 +1,744 @@
+---
+title: "Mat022 Coursework Report"
+author: Hasan Can Uzuner
+email: uzunerhc@cardiff.ac.uk
+date:  "`r format(Sys.time(), '%d %B %Y')`"
+
+fontsize: 11pt
+fontfamily: times
+geometry: margin=1in
+
+output:
+  bookdown::pdf_document2:
+
+    toc: true
+    number_sections: true
+    keep_tex: true 
+    citation_package: natbib
+    fig_caption: true 
+    
+    highlight: haddock 
+    df_print: kable
+    extra_dependencies:
+      caption: ["labelfont={bf}"]
+
+bibliography: [refs.bib]
+biblio-style: apalike
+link-citations: yes
+
+abstract: In this report, we show how to apply inferential and descriptive analysis made on the NBA dataset. We try to extract information from the dataset and interpret them. Some statistical tests will be used to help us to understand the dataset better. We will study how the shot clock affects the score. We will compare performances of teams per game and also in the 2014-2015 NBA season, the final was played between Golden State Warriors and Cleveland. Their best players were Stephen Curry and Lebron James. We will try to analyze their stats to find differences and similarities between Stephen Curry and Lebron James. Then, correlation plots of teams and players will be shown to find correlated features and also the season's best players in different categories will be shown. Finally, we will try to make a prediction about is the team win or lose this game base on statistic per game.
+---
+
+<!-- set knitr options here -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(MASS)
+library(pROC)
+library("plyr")
+library("ppcor")
+library(corrplot)
+# read data
+df <- read.csv("/Users/can/Desktop/nbadata.csv", header=TRUE)
+df = df[complete.cases(df), ]
+```
+
+<!-- main body starts here -->
+
+# Introduction {#intro}
+The NBA dataset includes shot attempts of players in each game in the NBA 2014-2015 season. Basketball is a game played 5 to 5 and each team has 24 seconds to make a score in a try. There are several features of players given to us in the dataset.
+
+```{r colnames, echo = FALSE}
+print(colnames(df))
+```
+
+Each row consists of information about a player who tries to make a score. As we can see above, the dataset is very detailed and lots of different analyses can be made on them. In the dataset, there are 128069 records and 23 features. Also this dataset has records of 281 unique players and 904 unique games.
+
+# Performances {#sec:Performances}
+
+## Total Point Statistic based on Shot Clock
+
+In this section, we search for are there any effects of the shot clock on points per second. To do that, at first, the NBA dataset has been divided per game. Then the shot clock feature variables have rounded to make data discrete. Figure 1 suggests that, if the shot clock increases, the maximum number of total points in this second also increases. Therefore, it can be seen that there is a positive correlation between shot clock and pts. The same positive correlation is also valid for a mean number of total points per second. These observations are confirmed by Spearman’s rank correlation tests.
+
+```{r curve, echo = FALSE,fig.height= 4, fig.width= 10,fig.cap = "Best and Mean total points per second based on shot clock", fig.align = "center"}
+df_shot_clock = aggregate(x = df$PTS, by = list(df$GAME_ID, df$SHOT_CLOCK), FUN = "sum")
+colnames(df_shot_clock) = c("GAME_ID", "SHOT_CLOCK", "PTS")
+
+Best <- rep(1,25)
+Mean <- rep(1,25)
+
+for (i in 0:24){
+    Best[i+1] <- max(df_shot_clock[df_shot_clock$SHOT_CLOCK == i,]$PTS)
+    Mean[i+1] <- mean(df_shot_clock[df_shot_clock$SHOT_CLOCK == i,]$PTS)
+}
+
+shot_clock <- data.frame(Shot_Clock=0:24, Best=Best, Mean=Mean)
+
+mean_model <- lm(Mean ~ Shot_Clock, data=shot_clock)
+max_model <- lm(Best ~ Shot_Clock, data=shot_clock)
+
+par(mfrow=c(1,2))
+
+xcoord <-seq(0, 24,length.out=25)
+newData <- data.frame(Shot_Clock=xcoord)
+
+pred.w.clim <- predict(max_model, newData, 
+                       interval = "confidence", level=0.95)
+matplot(xcoord, 
+        cbind(pred.w.clim),
+        lty = c(2,2,2), lwd=3,
+        col = c('black', 'purple', 'purple'),
+        type = "l", 
+        xlab = 'Shot Clock(second)',
+        ylab = 'Total points',
+        ylim = c(min(Best),max(Best))
+        )
+lines(0:24, Best, type='o', 
+       pch=19, col='red', cex=1, lwd=2)
+
+legend('topleft', c('Best'), col=c('red'), lty=1, lwd=2, 
+       pch=19, pt.cex=1)
+
+#######################################################################
+
+
+pred.w.clim <- predict(mean_model, newData, 
+                       interval = "confidence", level=0.95)
+matplot(xcoord, 
+        #cbind(pred.w.clim, pred.w.plim[,-1]),
+        cbind(pred.w.clim),
+        lty = c(2,2,2), lwd=3,
+        col = c('black', 'purple', 'purple'),
+        type = "l", 
+        xlab = 'Shot Clock(second)',
+        ylab = 'Total points',
+        ylim = c(min(Mean), max(Mean))
+        )
+
+lines(0:24, Mean, type='o', 
+       pch=19, col='red', cex=1, lwd=2)
+
+legend('topleft', c('Mean'), col=c('red'), lty=1, lwd=2, 
+       pch=19, pt.cex=1)
+```
+
+In the figure, Several observations have been made. Firstly, at the beginning of the 24-second attack duration, mean and best point numbers are relatively low but it increases over time. Secondly, generally, players make score between 10 and 20 seconds and if they exceed 20 seconds, they tend to use the time completely. This can be seen clearly in the figure. At the end of the 24 seconds, the mean total points are almost 6 and the best total points are almost 23  which is significantly higher than others. Spearman's correlation estimate values of best and mean total points are 0.43 and 0.58 respectively. This is proof of a positive correlation.
+
+
+
+```{r itsblo, tidy=TRUE, echo=FALSE}
+corr_best <- cor.test(0:24, Best, method='spearman', alternative='greater',exact=FALSE)
+corr_mean <- cor.test(0:24, Mean, method='spearman', alternative='greater',exact=FALSE)
+
+spearman_Test <- data.frame(performance=c('Best', 'Mean'),
+                                alternative=c(corr_best$alternative,corr_mean$alternative),
+                                p.value=c(corr_best$p.value,corr_mean$p.value),
+                                estimate=c(corr_best$estimate,corr_mean$estimate))
+
+spearman_Test
+```
+
+## Comparison of teams points performances per game
+
+Figure 2 gives statistics about the means and variances of teams per game. In this dataset, there are no free throw statistics. Because of that, the exact score cannot find, however, the total of 2 points and 3 points still can be calculated and it will give intuition about teams performances. As we can see in the figure, Minnesota Timberwolves, Philadelphia 76ers, and New York Knicks had the lowest performance. This is not surprising because, in the 2014-2015 season, they were the worst teams in their conferences. Golden State Warriors and Los Angeles Clippers had the highest means. Golden State Warriors were the champion of the 2014-2015 season so this result is also predictable. Besides that, the top scorer player of the season was Stephen Curry which is played for Golden State Warrior.  
+
+```{r MeanVarianceTeams, echo = FALSE, fig.height= 10, fig.width= 15 ,fig.cap = "The Figure shows mean and variance of teams per game with confidence intervals. Confidence interval for mean is 0.9 and confidence interval for variance is 0.7", fig.align = "center"}
+df_h_w = df[(df$LOCATION == "H"),]
+df_h_w = aggregate(x = df_h_w$PTS, by = list(df_h_w$HOME_TEAM, df_h_w$GAME_ID), FUN = "sum")
+df_a_w = df[(df$LOCATION == "A"),]
+df_a_w = aggregate(x = df_a_w$PTS, by = list(df_a_w$AWAY_TEAM, df_a_w$GAME_ID), FUN = "sum")
+df_teams = rbind(df_h_w, df_a_w)
+colnames(df_teams) = c("TEAM", "GAME_ID", "PTS")
+var_func<-function(Obs, alpha){
+    
+    Nsamp<-length(Obs)
+    sss2<- var(Obs)
+    
+    LowBound<- (Nsamp-1) * sss2 / qchisq(1-alpha/2, df=Nsamp-1)
+    UpBound <- (Nsamp-1) * sss2 / qchisq(alpha/2, df=Nsamp-1)
+    
+    return(c(LowBound, UpBound))
+}
+Mean <- rep(0,length(unique(df_teams$TEAM)))
+Var <- rep(0,length(unique(df_teams$TEAM)))
+CI_mean <- matrix(0, length(unique(df_teams$TEAM)), 2)
+CI_var <- matrix(0, length(unique(df_teams$TEAM)), 2)
+j = 1
+for (i in unique(df_teams$TEAM)){
+    df_team = df_teams[(df_teams$TEAM == i),]
+    mean = mean(df_team$PTS)
+    var = var(df_team$PTS)
+    mean_CI = t.test(df_team$PTS, conf.level = 0.1)$conf.int
+    var_CI = var_func(df_team$PTS, 0.3)
+    Mean[j] = mean
+    Var[j] = var
+    CI_mean[j,] = mean_CI
+    CI_var[j,] = var_CI
+    j = j + 1
+}
+
+plot(c(),c(), 
+     type='p', pch=3, cex=0.7, lwd=2, col='blue',
+     xlab='Mean', ylab='Variance',
+     xlim=c(min(CI_mean), max(CI_mean)),
+     ylim=c(min(CI_var),max(CI_var)))
+
+for (i in 1:length(unique(df_teams$TEAM))){
+    lines(CI_mean[i,], c(1,1)*Var[i], lty=1, lwd=3, col='orange')
+    
+    lines(c(1,1)*Mean[i], CI_var[i,], lty=1, lwd=3, col='chartreuse3')
+}
+
+for (i in 1:length(unique(df_teams$TEAM))){
+    text(Mean[i], Var[i], 
+         sprintf('%s',unique(df_teams$TEAM)[i]),
+         pos=1, cex = 1)
+}
+```
+
+Two homoscedasticity tests were applied to the dataset to find is there any difference between variances of teams. After applied Bartlett and Fligner-Killeen test, it can be seen that the p-values are 2.832030e-13 and 5.507873e-09. This means at significance level=0.05, we can reject the null hypothesis and conclude that there are significant differences of variances among teams.
+
+```{r Pts-TEAM per game, echo=FALSE}
+
+df_teams$TEAM = factor(df_teams$TEAM)
+
+bartlett = bartlett.test(PTS ~ TEAM, data =df_teams)
+fligner = fligner.test(PTS ~ TEAM, data =df_teams)
+Test_homogeneity <- data.frame(Test=c('Bartlett', 'Fligner-Killeen'), p.value=c(bartlett$p.value, fligner$p.value))
+
+print(Test_homogeneity)
+```
+
+Now, we find that variances of total points of teams per game are different. Then we can check is there any difference in mean points. To do that, a one-way ANOVA test was applied. The p-value of this test is 2e-16 which means there is a significant difference between the mean score of teams per game. In this dataset, each team has between 61-58 games and this means it is balanced and also we have 984 unique games which are relatively large.
+
+Also, we can find lower and higher confidence interval values for the total score of teams both home and away.
+
+```{r CIhome, echo = FALSE, fig.height= 5, fig.width= 15, fig.cap = "Confidence intervals of totals points of team at home", fig.align = "center"}
+team_list = unique(df$HOME_TEAM)
+CI_mean = matrix(0,30,2)
+j = 1
+for (i in team_list){
+  df_team_home = df[(df$HOME_TEAM == i) & (df$LOCATION == "H") & (df$SHOT_RESULT == "made"),]
+  a = aggregate(df_team_home$PTS, by = list(df_team_home$GAME_ID), FUN = "sum")
+  
+  CI = t.test(a$x, conf.level = 0.95)$conf.int
+  CI_mean[j,] = CI
+  j = j + 1
+}
+
+maxY = max(CI_mean)
+minY = min(CI_mean)
+
+plot(1:30, CI_mean[,1], col = "orange", pch = 3, lwd = 3, ylim = c(minY-5, maxY+5),xaxt='n', xlab='')
+
+axis(1, at=seq(1,30,by=1), labels=team_list, las=0)
+
+points(1:30, CI_mean[,2], pch=3, lwd=3, col='orange')
+
+for (i in 1:30){
+  lines(c(i,i), CI_mean[i,], lwd=3, col='orange')
+}
+```
+
+```{r CIaway, echo = FALSE, fig.height= 5, fig.width= 15, fig.cap = "Confidence intervals of totals points of team at away", fig.align = "center"}
+team_list = unique(df$HOME_TEAM)
+CI_mean = matrix(0,30,2)
+j = 1
+for (i in team_list){
+  df_team_home = df[(df$HOME_TEAM == i) & (df$LOCATION == "A") & (df$SHOT_RESULT == "made"),]
+  a = aggregate(df_team_home$PTS, by = list(df_team_home$GAME_ID), FUN = "sum")
+  
+  CI = t.test(a$x, conf.level = 0.95)$conf.int
+  CI_mean[j,] = CI
+  j = j + 1
+}
+
+maxY = max(CI_mean)
+minY = min(CI_mean)
+
+plot(1:30, CI_mean[,1], col = "orange", pch = 3, lwd = 3, ylim = c(minY-5, maxY+5),xaxt='n', xlab='')
+
+axis(1, at=seq(1,30,by=1), labels=team_list, las=0)
+
+points(1:30, CI_mean[,2], pch=3, lwd=3, col='orange')
+
+for (i in 1:30){
+  lines(c(i,i), CI_mean[i,], lwd=3, col='orange')
+}
+```
+
+In Figure 3 and Figure 4, it can be seen that there is a significant difference between teams' home and away scores. To justify that, Welch Two Sample t-test has been applied and p-value 0.001 which is smaller than 0.05. Therefore, it is justified that, there is a significant difference between home and away points.
+
+```{r ttest, echo = FALSE}
+
+df_home = df[df$LOCATION == "H",]$PTS
+df_away = df[df$LOCATION == "A",]$PTS
+
+ttest = t.test(x = df_home, y = df_away)
+
+
+```
+## Comparison between Lebron James and Stephen Curry
+
+In the 2014-2015 season, the final game was played between Golden State Warriors and Cleveland Cavaliers. Because of that, we can compare their best players to understand is there any difference between their basketball styles. To do that, at first, important features should be extracted. For instance, average dribbling before shot, shot accuracy, 2 and 3 points, etc. are significant to compare them. 
+
+Two Sample t-test and f-test have applied to compare their features. In consider Dribbling, it can be seen that we cannot reject HO and decide any difference between variances in the f test. The p-value is 0.80 which is significantly higher than 0.05. However, in a two-sample t-test, it can be seen that the average dribbling of Lebron James is significantly higher than Stephen Curry. The same situation is also valid for touch time. As a result of that, Lebron James more likely to play with the ball before shooting than Stephen Curry. Also, as a result of the two-sample t-test, we can't conclude that there is a difference between their 2 points accuracy. On the other hand, Stephen Curry has high three-point accuracy. Finally, Curry's average shoot distance is higher than Lebron James. 
+
+```{r curry vs lebron, echo=FALSE}
+df_curry = df[df$PLAYER_NAME == "Stephen Curry",]
+df_curry_home = df_curry[df$LOCATION == "H",]
+df_curry_away = df_curry[df$LOCATION == "A",]
+df_lebron = df[df$PLAYER_NAME == "Lebron James",]
+df_lebron_home = df_lebron[df$LOCATION == "H",]
+df_lebron_away = df_lebron[df$LOCATION == "A",]
+df_curry_home_points = aggregate(x = df_curry_home$PTS, by = list(df_curry_home$GAME_ID), FUN = (sum))
+df_curry_away_points = aggregate(x = df_curry_away$PTS, by = list(df_curry_away$GAME_ID), FUN = (sum))
+df_lebron_home_points = aggregate(x = df_lebron_home$PTS, by = list(df_lebron_home$GAME_ID), FUN = (sum))
+df_lebron_away_points = aggregate(x = df_lebron_away$PTS, by = list(df_lebron_away$GAME_ID), FUN = (sum))
+
+df_curry_stats = aggregate(x = list(df_curry$DRIBBLES, df_curry$TOUCH_TIME, df_curry$SHOT_DIST), by = list(df_curry$GAME_ID), FUN = ("sum"))
+colnames(df_curry_stats) = c("GAME_ID","Total_Dribbling", "Total_Touch_Time", "Total_Shoot_Distance")
+df_curry_2_pts = df_curry[df_curry$PTS_TYPE == 2,]
+df_curry_3_pts = df_curry[df_curry$PTS_TYPE == 3,]
+total_2_pts_shoot_per_game_curry = matrix(0,length(df_curry_stats$GAME_ID),2)
+j = 1
+for (game in df_curry_stats$GAME_ID){
+    shoot_attempt = sum(count(df_curry_2_pts[df_curry_2_pts$GAME_ID == game,]$SHOT_NUMBER)$freq)
+    total_2_pts_shoot_per_game_curry[j,] = c(game, shoot_attempt)
+    j = j+1
+}
+total_2_pts_shoot_per_game_curry  =data.frame(total_2_pts_shoot_per_game_curry)
+colnames(total_2_pts_shoot_per_game_curry) = c("GAME_ID", "Attempt_2_Pts_Shoot")
+total_3_pts_shoot_per_game_curry = matrix(0,length(df_curry_stats$GAME_ID),2)
+j = 1
+for (game in df_curry_stats$GAME_ID){
+    shoot_attempt = sum(count(df_curry_3_pts[df_curry_3_pts$GAME_ID == game,]$SHOT_NUMBER)$freq)
+    total_3_pts_shoot_per_game_curry[j,] = c(game, shoot_attempt)
+    j = j+1
+}
+total_3_pts_shoot_per_game_curry  =data.frame(total_3_pts_shoot_per_game_curry)
+colnames(total_3_pts_shoot_per_game_curry) = c("GAME_ID", "Attempt_3_Pts_Shoot")
+total_shoot_per_game_curry = matrix(0,length(df_curry_stats$GAME_ID),2)
+j = 1
+for (game in df_curry_stats$GAME_ID){
+    shoot_attempt = max(df_curry[df_curry$GAME_ID == game,]$SHOT_NUMBER)
+    total_shoot_per_game_curry[j,] = c(game, shoot_attempt)
+    j = j+1
+}
+total_shoot_per_game_curry  =data.frame(total_shoot_per_game_curry)
+colnames(total_shoot_per_game_curry) = c("GAME_ID", "Shoot_Attempt")
+df_curry_stats = merge(x = df_curry_stats, y = total_shoot_per_game_curry, by = "GAME_ID")
+df_curry_stats = merge(x = df_curry_stats, y = total_2_pts_shoot_per_game_curry, by = "GAME_ID")
+df_curry_stats = merge(x = df_curry_stats, y = total_3_pts_shoot_per_game_curry, by = "GAME_ID")
+df_curry_stats$Dribbling_AVG = df_curry_stats$Total_Dribbling / df_curry_stats$Shoot_Attempt
+df_curry_stats$Touch_Time_AVG = df_curry_stats$Total_Touch_Time / df_curry_stats$Shoot_Attempt
+df_curry_stats$Shoot_Distance_AVG = df_curry_stats$Total_Shoot_Distance / df_curry_stats$Shoot_Attempt
+total_2_pts_per_game = matrix(0,length(df_curry_stats$GAME_ID),2)
+j = 1
+for (game in df_curry_stats$GAME_ID){
+    score = sum(df_curry[(df_curry$GAME_ID == game & df_curry$PTS == 2),]$PTS)
+    total_2_pts_per_game[j,] = c(game, score)
+    j = j+1
+}
+total_2_pts_per_game  =data.frame(total_2_pts_per_game)
+colnames(total_2_pts_per_game) = c("GAME_ID", "Score_2_PTS")
+total_3_pts_per_game = matrix(0,length(df_curry_stats$GAME_ID),2)
+j = 1
+for (game in df_curry_stats$GAME_ID){
+    score = sum(df_curry[(df_curry$GAME_ID == game & df_curry$PTS == 3),]$PTS)
+    total_3_pts_per_game[j,] = c(game, score)
+    j = j+1
+}
+total_3_pts_per_game  =data.frame(total_3_pts_per_game)
+colnames(total_3_pts_per_game) = c("GAME_ID", "Score_3_PTS")
+df_curry_stats = merge(x = df_curry_stats, y = total_2_pts_per_game, by = "GAME_ID")
+df_curry_stats = merge(x = df_curry_stats, y = total_3_pts_per_game, by = "GAME_ID")
+df_curry_stats$Succ_2_point_attempt = df_curry_stats$Score_2_PTS / 2
+df_curry_stats$Succ_3_point_attempt = df_curry_stats$Score_3_PTS / 3
+df_curry_stats$Succ_2_point_rate = df_curry_stats$Succ_2_point_attempt / df_curry_stats$Attempt_2_Pts_Shoot
+df_curry_stats$Succ_3_point_rate = df_curry_stats$Succ_3_point_attempt / df_curry_stats$Attempt_3_Pts_Shoot
+
+df_lebron_stats = aggregate(x = list(df_lebron$DRIBBLES, df_lebron$TOUCH_TIME, df_lebron$SHOT_DIST), by = list(df_lebron$GAME_ID), FUN = ("sum"))
+colnames(df_lebron_stats) = c("GAME_ID","Total_Dribbling", "Total_Touch_Time", "Total_Shoot_Distance")
+df_lebron_2_pts = df_lebron[df_lebron$PTS_TYPE == 2,]
+df_lebron_3_pts = df_lebron[df_lebron$PTS_TYPE == 3,]
+total_2_pts_shoot_per_game_lebron = matrix(0,length(df_lebron_stats$GAME_ID),2)
+j = 1
+for (game in df_lebron_stats$GAME_ID){
+    shoot_attempt = sum(count(df_lebron_2_pts[df_lebron_2_pts$GAME_ID == game,]$SHOT_NUMBER)$freq)
+    total_2_pts_shoot_per_game_lebron[j,] = c(game, shoot_attempt)
+    j = j+1
+}
+total_2_pts_shoot_per_game_lebron  =data.frame(total_2_pts_shoot_per_game_lebron)
+colnames(total_2_pts_shoot_per_game_lebron) = c("GAME_ID", "Attempt_2_Pts_Shoot")
+total_3_pts_shoot_per_game_lebron = matrix(0,length(df_lebron_stats$GAME_ID),2)
+j = 1
+for (game in df_lebron_stats$GAME_ID){
+    shoot_attempt = sum(count(df_lebron_3_pts[df_lebron_3_pts$GAME_ID == game,]$SHOT_NUMBER)$freq)
+    total_3_pts_shoot_per_game_lebron[j,] = c(game, shoot_attempt)
+    j = j+1
+}
+total_3_pts_shoot_per_game_lebron  =data.frame(total_3_pts_shoot_per_game_lebron)
+colnames(total_3_pts_shoot_per_game_lebron) = c("GAME_ID", "Attempt_3_Pts_Shoot")
+total_shoot_per_game_lebron = matrix(0,length(df_lebron_stats$GAME_ID),2)
+j = 1
+for (game in df_lebron_stats$GAME_ID){
+    shoot_attempt = max(df_lebron[df_lebron$GAME_ID == game,]$SHOT_NUMBER)
+    total_shoot_per_game_lebron[j,] = c(game, shoot_attempt)
+    j = j+1
+}
+total_shoot_per_game_lebron  =data.frame(total_shoot_per_game_lebron)
+colnames(total_shoot_per_game_lebron) = c("GAME_ID", "Shoot_Attempt")
+df_lebron_stats = merge(x = df_lebron_stats, y = total_shoot_per_game_lebron, by = "GAME_ID")
+df_lebron_stats = merge(x = df_lebron_stats, y = total_2_pts_shoot_per_game_lebron, by = "GAME_ID")
+df_lebron_stats = merge(x = df_lebron_stats, y = total_3_pts_shoot_per_game_lebron, by = "GAME_ID")
+df_lebron_stats$Dribbling_AVG = df_lebron_stats$Total_Dribbling / df_lebron_stats$Shoot_Attempt
+df_lebron_stats$Touch_Time_AVG = df_lebron_stats$Total_Touch_Time / df_lebron_stats$Shoot_Attempt
+df_lebron_stats$Shoot_Distance_AVG = df_lebron_stats$Total_Shoot_Distance / df_lebron_stats$Shoot_Attempt
+total_2_pts_per_game = matrix(0,length(df_lebron_stats$GAME_ID),2)
+j = 1
+for (game in df_lebron_stats$GAME_ID){
+    score = sum(df_lebron[(df_lebron$GAME_ID == game & df_lebron$PTS == 2),]$PTS)
+    total_2_pts_per_game[j,] = c(game, score)
+    j = j+1
+}
+total_2_pts_per_game  =data.frame(total_2_pts_per_game)
+colnames(total_2_pts_per_game) = c("GAME_ID", "Score_2_PTS")
+total_3_pts_per_game = matrix(0,length(df_lebron_stats$GAME_ID),2)
+j = 1
+for (game in df_lebron_stats$GAME_ID){
+    score = sum(df_lebron[(df_lebron$GAME_ID == game & df_lebron$PTS == 3),]$PTS)
+    total_3_pts_per_game[j,] = c(game, score)
+    j = j+1
+}
+total_3_pts_per_game  =data.frame(total_3_pts_per_game)
+colnames(total_3_pts_per_game) = c("GAME_ID", "Score_3_PTS")
+df_lebron_stats = merge(x = df_lebron_stats, y = total_2_pts_per_game, by = "GAME_ID")
+df_lebron_stats = merge(x = df_lebron_stats, y = total_3_pts_per_game, by = "GAME_ID")
+df_lebron_stats$Succ_2_point_attempt = df_lebron_stats$Score_2_PTS / 2
+df_lebron_stats$Succ_3_point_attempt = df_lebron_stats$Score_3_PTS / 3
+df_lebron_stats$Succ_2_point_rate = df_lebron_stats$Succ_2_point_attempt / df_lebron_stats$Attempt_2_Pts_Shoot
+df_lebron_stats$Succ_3_point_rate = df_lebron_stats$Succ_3_point_attempt / df_lebron_stats$Attempt_3_Pts_Shoot
+
+var_test_dribbling = var.test(x = df_lebron_stats$Dribbling_AVG, y = df_curry_stats$Dribbling_AVG)
+t.test(x = df_lebron_stats$Dribbling_AVG, y = df_curry_stats$Dribbling_AVG, var.equal = TRUE, alternative = "less")
+
+var_test_touch = var.test(x = df_lebron_stats$Touch_Time_AVG, y = df_curry_stats$Touch_Time_AVG)
+mean_test_touch = t.test(x = df_lebron_stats$Touch_Time_AVG, y = df_curry_stats$Touch_Time_AVG, var.equal = TRUE, alternative = "less")
+
+var_test_2pts = var.test(x = df_lebron_stats$Succ_2_point_rate, y = df_curry_stats$Succ_2_point_rate)
+mean_test_2pts = t.test(x = df_lebron_stats$Succ_2_point_rate, y = df_curry_stats$Succ_2_point_rate)
+
+var_test_3pts = var.test(x = df_lebron_stats$Succ_3_point_rate, y = df_curry_stats$Succ_3_point_rate)
+t.test(x = df_lebron_stats$Succ_3_point_rate, y = df_curry_stats$Succ_3_point_rate, var.equal = TRUE, alternative = "greater")
+
+```
+
+# Differences and Bests {#differences}
+
+## Differences Total Point as periods
+
+In this section, we will analyze total points in periods. At first, we can plot the graph to see total scores better.
+
+```{r periods, echo = FALSE, fig.height = 4, fig.width = 4, fig.cap = "Partial Correlation graph of features of players based on per game", fig.align = "center"}
+
+df_succ_shots = df[df$SHOT_RESULT == "made",]
+df_period_points_cat = aggregate(x = df_succ_shots$PTS, by = list(df_succ_shots$PERIOD), FUN= "sum")
+colnames(df_period_points_cat) = c("Period", "Total_Points")
+barplot(df_period_points_cat$Total_Points, names.arg = df_period_points_cat$Period, col = "cyan" ,ylim = c(0,35000), main = "Total Points per Period",cex.main = 0.8)
+
+```
+
+It appears that first four period looks like similar. Other periods are extra time and there is rarely an extension of the game. Therefore it is normal that totals points are lower than the first 4 periods. They understand that are statistically similar or not we make a comparison between them and instead of making it one by one, we will use Tukey Test. In Figure 5, it can be seen that players tend to make more points in periods 1 and 3. This might conclude as, in periods 2 and 4, they are tried. because there is only a long-duration break between period 2 and period 3.
+
+```{r tukey, echo = FALSE}
+df_period_point = aggregate(df$PTS, by = list(df$GAME_ID,df$PERIOD), FUN = "sum")
+colnames(df_period_point) = c("GAME_ID", "PERIOD", "PTS")
+
+df_period_point$PERIOD = factor(df_period_point$PERIOD)
+
+fligner = fligner.test(PTS ~ PERIOD, data = df_period_point)
+bartlett = bartlett.test(PTS ~ PERIOD, data = df_period_point)
+
+res.aov2 = aov(PTS ~ PERIOD, data = df_period_point)
+summary(res.aov2)
+
+tukey = TukeyHSD(res.aov2)
+```
+
+In the Tukey test, a 0.95 confidence interval was used and it can be seen that the total number of points in the first 4 periods are all different. It is said that because, in the comparisons, p values are all almost 0. On the other hand, extension periods means look the same statistically according to the Tukey test.
+
+
+
+## Correlations between features of players
+
+In this section, we will try to find both correlation and partial correlation of features of players. To do that, I will use players' stats per game and try to find correlated features.
+
+```{r Correlation, echo = FALSE, fig.height = 3.5, fig.width = 3.5, fig.cap = "Partial Correlation graph of features of players based on per game", fig.align = "center"}
+df_home = df[df$LOCATION == "H",]
+df_away = df[df$LOCATION == "A",]
+
+df_home_mean = aggregate(x = list(df_home$FINAL_MARGIN, df_home$SHOT_CLOCK ,df_home$DRIBBLES, df_home$TOUCH_TIME, df_home$SHOT_DIST, df_home$PTS_TYPE, df_home$CLOSE_DEF_DIST), by= list(df_home$PLAYER_NAME ,df_home$GAME_ID), FUN = "mean")
+colnames(df_home_mean) = c("PLAYER_NAME", "GAME_ID","FINAL_MARGIN", "SHOT_CLOCK", "DRIBBLES", "TOUCH_TIME", "SHOT_DIST", "PTS_TYPE", "CLOSE_DEF_DIST")
+
+df_home_sum = aggregate(x = list(df_home$PTS), by= list(df_home$PLAYER_NAME ,df_home$GAME_ID), FUN = "sum")
+colnames(df_home_sum) = c("PLAYER_NAME", "GAME_ID","PTS")
+
+df_home = merge(df_home_mean, df_home_sum, by = c("PLAYER_NAME", "GAME_ID"))
+df_home$HOME = 1
+
+
+df_away_mean = aggregate(x = list(df_away$FINAL_MARGIN, df_away$SHOT_CLOCK ,df_away$DRIBBLES, df_away$TOUCH_TIME, df_away$SHOT_DIST, df_away$PTS_TYPE, df_away$CLOSE_DEF_DIST), by= list(df_away$PLAYER_NAME ,df_away$GAME_ID), FUN = "mean")
+colnames(df_away_mean) = c("PLAYER_NAME", "GAME_ID","FINAL_MARGIN", "SHOT_CLOCK", "DRIBBLES", "TOUCH_TIME", "SHOT_DIST", "PTS_TYPE", "CLOSE_DEF_DIST")
+
+df_away_sum = aggregate(x = list(df_away$PTS), by= list(df_away$PLAYER_NAME ,df_away$GAME_ID), FUN = "sum")
+colnames(df_away_sum) = c("PLAYER_NAME", "GAME_ID","PTS")
+
+df_away = merge(df_away_mean, df_away_sum, by = c("PLAYER_NAME", "GAME_ID"))
+df_away$HOME = 0
+
+df_players = rbind(df_home, df_away)
+
+pcor <- pcor(as.matrix(df_players[,2:11]) )$estimate
+corrplot(pcor, method="circle", las = 1)
+```
+
+
+It appears that there are some positive correlations and some negative correlations. if we need to specify;
+
+- There is a positive correlation between HOME and FINAL_MARGIN. This means home teams are more likely to win.
+- Points per game slightly positively correlated with FINAL_MARGIN, SHOT_CLOCK, and TOUCH_TIME.
+- Shot_Dist and Close_Def_Dist are positively correlated. This means that players prefer to stay away from defensive players when shooting.<br />
+- PTS_Type and Shot_Dist positively correlated as expected.<br />
+- Shot_Clock and Shot_Dist negatively correlated. This indicated that players use the time to get closer to the basketball hoop.<br />
+- Touch_Time is positively correlated with Dribbling. They look strongly correlated.
+
+
+## Season Best Players
+
+
+```{r, echo=FALSE}
+df_player_score = aggregate(x = df$PTS, by = list(df$PLAYER_NAME), FUN = "sum")
+df_player_score = aggregate(x = df$PTS, by = list(df$PLAYER_NAME), FUN = "sum")
+colnames(df_player_score) = c("Player_Name", "Score")
+df_player_score = df_player_score[order(-df_player_score$Score),]
+top_scorers = head(df_player_score,20)
+df_3_pts = df[df$PTS ==3,]
+df_player_3_pts_score = aggregate(x = df_3_pts$PTS, by = list(df_3_pts$PLAYER_NAME), FUN = "sum")
+df_player_3_pts_score = aggregate(x = df_3_pts$PTS, by = list(df_3_pts$PLAYER_NAME), FUN = "sum")
+colnames(df_player_3_pts_score) = c("Player_Name", "Score")
+df_player_3_pts_score = df_player_3_pts_score[order(-df_player_3_pts_score$Score),]
+top_3_pts_scorers = head(df_player_3_pts_score,20)
+df_2_pts = df[df$PTS ==2,]
+df_player_2_pts_score = aggregate(x = df_2_pts$PTS, by = list(df_2_pts$PLAYER_NAME), FUN = "sum")
+df_player_2_pts_score = aggregate(x = df_2_pts$PTS, by = list(df_2_pts$PLAYER_NAME), FUN = "sum")
+colnames(df_player_2_pts_score) = c("Player_Name", "Score")
+df_player_2_pts_score = df_player_2_pts_score[order(-df_player_2_pts_score$Score),]
+top_2_pts_scorers = head(df_player_2_pts_score,20)
+
+
+
+df_missed_shots = df[df$SHOT_RESULT == "made",]
+df_successful_shots = df[df$SHOT_RESULT == "missed",]
+df_freq_defender_missed = lapply(df_missed_shots[, -1], function(x) as.data.frame(table(x)))[18]$CLOSEST_DEFENDER
+df_freq_defender_successful = lapply(df_successful_shots[, -1], function(x) as.data.frame(table(x)))[18]$CLOSEST_DEFENDER                          
+
+df_defender_stats = merge(x = df_freq_defender_missed, y = df_freq_defender_successful, by = c("x"))                                                                                                                                           
+df_defender_stats$succ_defense = df_defender_stats$Freq.x / (df_defender_stats$Freq.x + df_defender_stats$Freq.y)                                   
+
+df_defender_stats = df_defender_stats[order(-df_defender_stats$succ_defense),]  
+colnames(df_defender_stats) = c("Player_Name", "Succ_Defense", "Failed_Defense", "Succ_Def_Rate")   
+df_defender_stats = df_defender_stats[order(-df_defender_stats$Succ_Defense),]  
+
+best_defence = (head(df_defender_stats,20))
+```
+
+```{r bestofall, echo = FALSE,fig.height= 3.5, fig.width= 10,fig.cap = "Best Scorer and Defenser Players of Season", fig.align = "center"}
+par(mfrow = c(1,2))
+barplot(top_scorers$Score, names.arg = top_scorers$Player_Name, col = "cyan", horiz = TRUE ,main = "Top 20 - Scorers", las=1, cex.names = 0.4)
+barplot(best_defence$Succ_Defense, names.arg = best_defence$Player_Name, col = "cyan", horiz = TRUE ,main = "Best Defense Players", las=1, cex.names = 0.4)
+```
+
+
+
+```{r bestof2and3, echo = FALSE,fig.height= 3.5, fig.width= 10,fig.cap = "Best Scorer and Defenser Players of Season", fig.align = "center"}
+par(mfrow = c(1,2))
+barplot(top_2_pts_scorers$Score, names.arg = top_2_pts_scorers$Player_Name, col = "cyan", horiz = TRUE ,main = "Top 20 - 2 Point Scorers", las=1, cex.names = 0.4)
+barplot(top_3_pts_scorers$Score, names.arg = top_3_pts_scorers$Player_Name, col = "cyan", horiz = TRUE ,main = "Top 20 - 3 Point Scorers", las=1, cex.names = 0.4)
+```
+
+```{r, echo=FALSE}
+df <- read.csv("/Users/can/Desktop/nbadata.csv", header=TRUE)
+df_total = aggregate(x = df$PTS, by = list(df$PLAYER_NAME), FUN = "sum")
+colnames(df_total) = c("Player_Name", "Total_Point")
+df_3total = df[df$PTS_TYPE == "3",]
+df_3total = aggregate(x = df_3total$PTS, by = list(df_3total$PLAYER_NAME), FUN = "sum")
+colnames(df_3total) = c("Player_Name", "Tot_3_Point")
+df_2total = df[df$PTS_TYPE == "2",]
+df_2total = aggregate(x = df_2total$PTS, by = list(df_2total$PLAYER_NAME), FUN = "sum")
+colnames(df_2total) = c("Player_Name", "Tot_2_Point")
+df_players = merge(x = df_total, y = df_3total, by = c("Player_Name"))
+df_players = merge(x = df_players, y = df_2total, by = c("Player_Name"))
+
+top20 = 20
+df_players = df_players[order(-df_players$Total_Point),]
+top <- function(x, n){
+  result <- numeric()
+  for(i in 1:n){
+    j <- which.max(x)
+    result[i] <- j
+    x[j] <- -Inf
+  }
+  result
+}
+Top_Scorer = top(df_players$Total_Point,top20)
+Tot_2pts_Scorer = top(df_players$Tot_2_Point,top20)
+Tot_3pts_Scorer = top(df_players$Tot_3_Point,top20)
+Top_defence = top(df_players$Tot_3_Point,top20)
+GroupA = intersect(Tot_2pts_Scorer, Top_Scorer)
+GroupB = intersect(Tot_3pts_Scorer, Top_Scorer)
+GroupC = intersect(Tot_2pts_Scorer, Tot_3pts_Scorer)
+
+cat("Intersection of Top Scorers and Top 2 point Scorers: ", length(GroupA))
+cat("Intersection of Top Scorers and Top 2 point Scorers: ", length(GroupB))
+cat("Intersection of Top 2 point Scorers and Top 3 point Scorers: ", length(GroupC))
+
+```
+According to the intersection of top20 scorers, there are 11 scorers which are both in top20 scorers and 2 point top20 scorers. 7 players are also in top scorers and top 3 points scorers. On the other hand, in top20, there are players that both in them. Besides that, 3 players in Top20 Scorers don't be in top20 2 pointers and top20 3 pointers. This shows that their shooting styles are balanced.
+
+# Detect Win or Lose {#sec:Prediction}
+
+In this section, we will try to guess whether the teams have won or not using team stats. To do this, a new data set containing statistics of the teams per game was created using the data set based on based statistics. This new dataset includes average dribbling, shot distance, touch time, point type, and successful shoot accuracy of players per game, total points per game, also includes whether the team plays at home or away. The new categorical column named "WIN" was created and it takes 1 if the team wins or 0 if the team loses. In the dataset named nbadata, there are 904 unique games and the new dataset also includes all of the unique games but we have 1808 rows because in each game there is one winner and one loser. Therefore, it can be seen that the dataset is balanced with having 50% 0 labels and 50% 1 labels. To detect win or lose, logistic regression which is significantly good to predict binary outputs was used.
+
+```{r, echo=FALSE}
+df$TRY = 1
+df_win_home =  df[(df$LOCATION == "H" & df$W == "W"),]
+df_win_away =  df[(df$LOCATION == "A" & df$W == "W"),]
+df_lost_home = df[(df$LOCATION == "H" & df$W == "L"),]
+df_lost_away = df[(df$LOCATION == "A" & df$W == "L"),]
+
+df_win_home_mean = aggregate(x = list(df_win_home$DRIBBLES, df_win_home$SHOT_DIST ,df_win_home$TOUCH_TIME, df_win_home$PTS_TYPE), by = list(df_win_home$GAME_ID), FUN = "mean")
+colnames(df_win_home_mean) = c("GAME_ID","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE")
+df_win_homee = aggregate(x = list(df_win_home$PTS ,df_win_home$TRY, df_win_home$FGM), by = list(df_win_home$GAME_ID), FUN = "sum")
+colnames(df_win_homee) = c("GAME_ID","PTS", "TRY", "FGM")
+df_win_homee  = merge(x = df_win_homee, y = df_win_home_mean, by = "GAME_ID")
+df_win_homee$WIN = 1
+df_win_homee$LOCATION = 1
+df_win_homee = unique(merge(x = df_win_homee, y = df_win_home[,c(1,3)], by = "GAME_ID"))
+colnames(df_win_homee) = c("GAME_ID","PTS", "TRY", "FGM","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE", "WIN","LOCATION", "TEAM")
+
+df_win_away_mean = aggregate(x = list(df_win_away$DRIBBLES, df_win_away$SHOT_DIST ,df_win_away$TOUCH_TIME, df_win_away$PTS_TYPE), by = list(df_win_away$GAME_ID), FUN = "mean")
+colnames(df_win_away_mean) = c("GAME_ID","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE")
+df_win_awayy = aggregate(x = list(df_win_away$PTS ,df_win_away$TRY, df_win_away$FGM), by = list(df_win_away$GAME_ID), FUN = "sum")
+colnames(df_win_awayy) = c("GAME_ID","PTS", "TRY", "FGM")
+df_win_awayy  = merge(x = df_win_awayy, y = df_win_away_mean, by = "GAME_ID")
+df_win_awayy$WIN = 1
+df_win_awayy$LOCATION = 0
+df_win_awayy = unique(merge(x = df_win_awayy, y = df_win_away[,c(1,4)], by = "GAME_ID"))
+colnames(df_win_awayy) = c("GAME_ID","PTS", "TRY", "FGM","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE", "WIN","LOCATION", "TEAM")
+
+
+
+df_lost_home_mean = aggregate(x = list(df_lost_home$DRIBBLES, df_lost_home$SHOT_DIST ,df_lost_home$TOUCH_TIME, df_lost_home$PTS_TYPE), by = list(df_lost_home$GAME_ID), FUN = "mean")
+colnames(df_lost_home_mean) = c("GAME_ID","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE")
+df_lost_homee = aggregate(x = list(df_lost_home$PTS ,df_lost_home$TRY, df_lost_home$FGM), by = list(df_lost_home$GAME_ID), FUN = "sum")
+colnames(df_lost_homee) = c("GAME_ID","PTS", "TRY", "FGM")
+df_lost_homee  = merge(x = df_lost_homee, y = df_lost_home_mean, by = "GAME_ID")
+df_lost_homee$WIN = 0
+df_lost_homee$LOCATION = 1
+df_lost_homee = unique(merge(x = df_lost_homee, y = df_lost_home[,c(1,3)], by = "GAME_ID"))
+colnames(df_lost_homee) = c("GAME_ID","PTS", "TRY", "FGM","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE", "WIN","LOCATION", "TEAM")
+
+
+df_lost_away_mean = aggregate(x = list(df_lost_away$DRIBBLES, df_lost_away$SHOT_DIST ,df_lost_away$TOUCH_TIME, df_lost_away$PTS_TYPE), by = list(df_lost_away$GAME_ID), FUN = "mean")
+colnames(df_lost_away_mean) = c("GAME_ID","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE")
+df_lost_awayy = aggregate(x = list(df_lost_away$PTS ,df_lost_away$TRY, df_lost_away$FGM), by = list(df_lost_away$GAME_ID), FUN = "sum")
+colnames(df_lost_awayy) = c("GAME_ID","PTS", "TRY", "FGM")
+df_lost_awayy  = merge(x = df_lost_awayy, y = df_lost_away_mean, by = "GAME_ID")
+df_lost_awayy$WIN = 0
+df_lost_awayy$LOCATION = 0
+df_lost_awayy = unique(merge(x = df_lost_awayy, y = df_lost_away[,c(1,4)], by = "GAME_ID"))
+colnames(df_lost_awayy) = c("GAME_ID","PTS", "TRY", "FGM","DRIBBLES", "SHOT_DIST" ,"TOUCH_TIME", "PTS_TYPE", "WIN","LOCATION", "TEAM")
+
+
+df_match = rbind(df_win_homee, df_win_awayy, df_lost_homee, df_lost_awayy)
+df_match$TEAM = (as.numeric((factor(df_match$TEAM))))
+df_match$RATE = df_match$FGM/df_match$TRY*100
+
+cat("Features: ", colnames(df_match))
+cat("Number of Games Won: ", dim(df_match[df_match$WIN == 1,])[1])
+cat("Number of Games Lost: ", dim(df_match[df_match$WIN == 0,])[1])
+```
+
+**Feature Selection**
+
+  Feature selection is very significant to get best results in machine learning models. Multilinearity and unrelevant features can decrease model performance. To prevent that, "stepAIC" function under "MASS" package can be used. It reduce multilinearity and unrelevant features and give values to features based on their relevance.
+  
+```{r echo=FALSE, results='hide',message=FALSE}
+
+mod = glm(WIN ~ PTS+TRY+FGM+DRIBBLES+SHOT_DIST+TOUCH_TIME+PTS_TYPE+RATE+LOCATION+TEAM,
+          family=binomial(link = "logit"), data = df_match)
+model = stepAIC(mod, direction = "both")
+```
+
+```{r, echo=FALSE}
+print(model$coefficients[1:6])
+```
+
+  After feature selection, it can be seen that stepAIC function coefficients can give intuition about important features. Based on these coefficients, if total points and touch time are high, teams more likely to win. Also, location is a very significant feature. As we can see, home teams are more likely to win. On the other hand, surprisingly, there is a negative correlation between a win and a total try. "Team" features are also effective on win or lose. In the coefficient table, it seems negative, however, numerical variables are just used to distinguish them, therefore whether the team values are small or big is meaningless for us.
+  
+
+```{r ROC-curve, echo = FALSE, fig.height = 4, fig.width = 4, fig.cap = "ROC curve for the logistic regression model", fig.align = "center"}
+confusion.glm <- function(data, model, tresh){
+  prediction <- ifelse(predict(model, data, type='response') > tresh, TRUE, FALSE)
+  confusion  <- table(prediction, as.logical(model$y))
+  confusion  <- cbind(confusion, c(1 - confusion[1,1]/(confusion[1,1]+confusion[2,1]), 
+                                   1 - confusion[2,2]/(confusion[2,2]+confusion[1,2])))
+  confusion  <- as.data.frame(confusion)
+  names(confusion) <- c('FALSE', 'TRUE', 'class.error')
+  confusion
+}
+data = df_match
+prob <- predict(model, type=c("response"))
+
+data$prob <- prob
+
+ROC_curve <- roc(WIN ~ prob, data=data, 
+                 levels=c(0,1), direction='<')
+
+print(auc(WIN ~ prob, data = data))
+
+plot(ROC_curve)
+
+# Confusion matrix at a given decision treshod
+confusion_matrix <- confusion.glm(data, model, 0.50)
+
+SensitivityT <- confusion_matrix[2,2]/sum(confusion_matrix[,2])
+SpecificityT <- confusion_matrix[1,1]/sum(confusion_matrix[,1])
+
+abline(v=SpecificityT, col='orange', lwd=4, lty=3)
+abline(h=SensitivityT , col='orange', lwd=4, lty=3)
+```
+
+Confusion matrix give statistic about true and false labeled. the treshhold determined as 50% percent because this a balanced dataset and if predictor performes higher performance than 50%, it can be said that, it is better than random prediction. In the table below, error rate of both true labels and false labels is very close which is approximately 30%. The logistic model that created can detect win and lose with 70% which is not perfect but better than prediction.
+
+```{r, echo=FALSE}
+noquote('Confusion matrix for logistic model with 50% decision treshold:')
+print(confusion_matrix)
+```
+
+
+# Conclusion
+
+In this dataset, we have tried to extract important information from the dataset. To do that, different tests have been applied. We applied regression techniques on the total score based on seconds and find a regression line for both best and mean values per match. Also, to compare teams performances per match f-test, t-test, finger, and bartlett test have applied. Then we compared the two best basketballers of the season and analyze their style using the Shapiro test, var test, and Welch t-test. Also, the seasons of the best basketballers in different areas have been extracted in the dataset. Besides them, to analyze total points in different periods, the Tukey test had applied. In the dataset, at first, there were 128069 records, however, there were some nan values. These values are especially located in some columns and before using these columns, if na values effect tests, they should have removed from the dataset.
+
+Our main observation on the dataset,
+
+- Players tend to use time completely and make their shot generally last seconds of 24-second duration. Because of that, the Average score increased over 24 seconds time period. (Section 2)
+- There is a significant difference between the mean points of teams. On the other hand, according to tests, variances are quite similar. Also, there is a positive correlation between the total win of teams and total scores of teams. (Section 2)
+- Total Point on periods is not homogeneous. (Section 3)
+- In 20 top scorers, 18 of them based on top 2 pointers or top 3 pointers. Surprisingly, even if the other 2 players not on this top list, they are still on the top scorer list. Therefore, we can say that strong skill on one side is not necessary to be top scorer. (Section 3)
+- Winner and Loser can be separated into the dataset. Even if our logistic model doesn't detect winner and loser perfectly. It can be still detected over 70% rate.
